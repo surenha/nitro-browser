@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NitroFS Web</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background: #1a1a1a;
+        color: white;
+      }
+      #app {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      #texture-canvas {
+        border: 2px solid #444;
+        margin-top: 20px;
+        background: #333;
+      }
+      #rom-file {
+        margin: 10px 0;
+        padding: 10px;
+        background: #333;
+        color: white;
+        border: 1px solid #555;
+      }
+
+      /* file browser css */
+      .file-browser {
+        margin-top: 20px;
+        border: 1px solid #444;
+        padding: 15px;
+        border-radius: 5px;
+        background: #2a2a2a;
+      }
+
+      .breadcrumb {
+        margin-bottom: 15px;
+        padding: 8px;
+        background: #333;
+        border-radius: 3px;
+      }
+
+      .breadcrumb-item {
+        color: #4af;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+
+      .breadcrumb-item:hover {
+        color: #6cf;
+      }
+
+      .file-list {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .file-item {
+        padding: 8px 12px;
+        margin: 2px 0;
+        background: #333;
+        border-radius: 3px;
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+
+      .file-item:hover {
+        background: #3a3a3a;
+        border-color: #555;
+      }
+
+      .file-item.directory {
+        color: #4af;
+      }
+
+      .file-item.file {
+        color: #afa;
+      }
+
+      /* texture info */
+      .texture-info {
+        margin-top: 15px;
+        padding: 10px;
+        background: #333;
+        border-radius: 5px;
+        border-left: 4px solid #4af;
+      }
+
+      .texture-info h4 {
+        margin: 0 0 8px 0;
+        color: #4af;
+      }
+
+      .texture-info p {
+        margin: 4px 0;
+        font-family: monospace;
+        font-size: 12px;
+      }
+
+      /* texture controls */
+      .texture-controls {
+        margin-top: 20px;
+        padding: 15px;
+        background: #2a2a2a;
+        border-radius: 5px;
+        border: 1px solid #444;
+      }
+
+      .texture-navigation {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
+        margin-top: 10px;
+      }
+
+      .texture-navigation button {
+        padding: 8px 16px;
+        background: #4af;
+        border: none;
+        border-radius: 3px;
+        color: white;
+        cursor: pointer;
+      }
+
+      .texture-navigation button:hover {
+        background: #6cf;
+      }
+
+      .texture-navigation span {
+        color: #ccc;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <h1>NitroFS Web + WebGL</h1>
+      <div>
+        <label for="rom-file">Load ROM File:</label><br />
+        <input type="file" id="rom-file" accept=".nds,.bin" />
+      </div>
+      <div>
+        <h3>WebGL Texture Test:</h3>
+        <canvas id="texture-canvas" width="512" height="512"></canvas>
+      </div>
+      <div id="file-browser"></div>
+    </div>
+  </body>
+</html>
