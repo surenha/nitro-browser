@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NitroFS Browser Implementation</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .file-input-section,
+      .file-browser,
+      .file-viewer {
+        border: 1px solid #ccc;
+        padding: 15px;
+        border-radius: 5px;
+      }
+      .file-browser {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+      .file-tree {
+        list-style-type: none;
+        padding-left: 20px;
+      }
+      .file-tree li {
+        cursor: pointer;
+        padding: 2px 0;
+      }
+      .file-tree li:hover {
+        background-color: #f0f0f0;
+      }
+      .file-tree .directory::before {
+        content: "📁 ";
+      }
+      .file-tree .file::before {
+        content: "📄 ";
+      }
+      button {
+        padding: 8px 16px;
+        margin: 5px;
+        cursor: pointer;
+      }
+      pre {
+        background-color: #f5f5f5;
+        padding: 10px;
+        border-radius: 3px;
+        overflow-x: auto;
+        max-height: 500px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>NitroFS Browser</h1>
+
+      <div class="file-input-section">
+        <h3>Load ROM File</h3>
+        <input type="file" id="romFile" accept=".nds,.bin" />
+        <button onclick="loadROM()">Load ROM</button>
+      </div>
+
+      <div class="file-browser" style="display: none">
+        <h3>File Browser</h3>
+        <div id="fileTree"></div>
+      </div>
+
+      <div class="file-viewer" style="display: none">
+        <h3>File Viewer</h3>
+        <div id="fileInfo"></div>
+        <pre id="fileContent"></pre>
+        <button onclick="downloadFile()">Download File</button>
+      </div>
+    </div>
+
+    <script>
+      // BufferReader Class
+      class BufferReader {
+        constructor(
+          buffer,
+          start = 0,
+          length = buffer.byteLength,
+          littleEndian = true
+        ) {
+          this.buffer = buffer;
+          this.start = start;
+          this.bufferLength = length;
+          this.view = new DataView(buffer, start, length);
+          this.littleEndian = littleEndian;
+        }
+
+        static new(buffer, littleEndian = true) {
+          return new BufferReader(buffer, 0, buffer.byteLength, littleEndian);
+        }
+
+        slice(start, end) {
+          if (end === undefined || end > this.bufferLength) {
+            end = this.bufferLength;
+          }
+          return new BufferReader(
+            this.buffer,
+            this.start + start,
+            end - start,
+            this.littleEndian
+          );
+        }
+
+        readUint8(offset) {
+          return this.view.getUint8(offset);
+        }
+
+        readUint16(offset) {
+          return this.view.getUint16(offset, this.littleEndian);
+        }
+
+        readUint24(offset) {
+          return (
+            this.view.getUint8(offset) |
+            (this.view.getUint8(offset + 1) << 8) |
+            (this.view.getUint8(offset + 2) << 16)
+          );
+        }
+
+        readUint32(offset) {
+          return this.view.getUint32(offset, this.littleEndian);
+        }
+
+        readInt8(offset) {
+          return this.view.getInt8(offset);
+        }
+
+        readInt16(offset) {
+          return this.view.getInt16(offset, this.littleEndian);
+        }
+
+        readInt32(offset) {
+          return this.view.getInt32(offset, this.littleEndian);
+        }
+
+        readFloat32(offset) {
+          return this.view.getFloat32(offset, this.littleEndian);
+        }
+
+        readChars(offset, length) {
+          let result = "";
+          for (let i = 0; i < length; i++) {
+            result += String.fromCharCode(this.view.getUint8(offset + i));
+          }
+          return result;
+        }
+
+        readString(offset) {
+          let result = "";
+          let i = 0;
+          while (true) {
+            let c = this.view.getUint8(offset + i);
+            if (c === 0) break;
+            result += String.fromCharCode(c);
+            i++;
+          }
+          return result;
+        }
+
+        readVL(offset) {
+          let result = 0;
+          let i = 0;
+          while (true) {
+            const c = this.view.getUint8(offset + i);
+            result <<= 7;
+            result |= c & 0x7f;
+            if ((c & 0x80) === 0) break;
+            i++;
+          }
+          return { value: result, length: i + 1 };
+        }
+
+        get length() {
+          return this.bufferLength;
+        }
+
+        getBuffer() {
+          return this.buffer.slice(this.start, this.start + this.bufferLength);
+        }
+      }
+
+      // CartridgeHeader Class
+      class CartridgeHeader {
+        constructor(raw) {
+          this.gameTitle = raw.readChars(0x00, 12).replace(/\0/g, "");
+          this.gameCode = raw.readChars(0x0c, 4).replace(/\0/g, "");
+          this.fntOffset = raw.readUint32(0x40);
+          this.fntLength = raw.readUint32(0x44);
+          this.fatOffset = raw.readUint32(0x48);
+          this.fatLength = raw.readUint32(0x4c);
+        }
+      }
+
+      // NitroFAT Class
+      class NitroFAT {
+        constructor(raw) {
+          this.entries = [];
+          for (let i = 0; i < raw.length; i += 8) {
+            const startAddress = raw.readUint32(i);
+            const endAddress = raw.readUint32(i + 4);
+            this.entries.push({ startAddress, endAddress });
+          }
+        }
+      }
+
+      // NitroFNT Classes
+      const NitroFNTSubtableEntryType = {
+        File: 0,
+        SubDirectory: 1,
+        EndOfSubTable: 2,
+        Reserved: 3,
+      };
+
+      class NitroFNTMainTable {
+        constructor(raw, numEntries) {
+          this.totalDirCount = numEntries;
+          this.entries = [];
+          for (let i = 0; i < numEntries; i++) {
+            const entryOffset = i * 8;
+            const entryBuffer = raw.slice(entryOffset, entryOffset + 8);
+            const entry = {
+              subTableOffset: entryBuffer.readUint32(0x00),
+              firstFileID: entryBuffer.readUint16(0x04),
+              parentDirectoryID: entryBuffer.readUint16(0x06),
+            };
+            this.entries.push(entry);
+          }
+        }
+      }
+
+      class NitroFNTSubTable {
+        constructor(raw) {
+          this.entries = [];
+          let i = 0;
+          while (true) {
+            const typeAndLength = raw.readUint8(i);
+            i++;
+            const { type, length } = this.separateTypeAndLength(typeAndLength);
+
+            if (type === NitroFNTSubtableEntryType.EndOfSubTable) break;
+            if (type === NitroFNTSubtableEntryType.Reserved) {
+              console.warn("Reserved entry type found in NitroFNTSubTable");
+              continue;
+            }
+
+            const name = raw.readChars(i, length);
+            i += length;
+
+            const entry = { type, length, name };
+
+            if (type === NitroFNTSubtableEntryType.SubDirectory) {
+              const id = raw.readUint16(i) & 0xfff;
+              i += 2;
+              entry.subDirectoryID = id;
+            }
+
+            this.entries.push(entry);
+          }
+        }
+
+        separateTypeAndLength(typeAndLength) {
+          if (typeAndLength === 0x00) {
+            return { type: NitroFNTSubtableEntryType.EndOfSubTable, length: 0 };
+          } else if (typeAndLength === 0x80) {
+            return { type: NitroFNTSubtableEntryType.Reserved, length: 0 };
+          } else if (typeAndLength < 0x80) {
+            return {
+              type: NitroFNTSubtableEntryType.File,
+              length: typeAndLength % 0x80,
+            };
+          } else {
+            return {
+              type: NitroFNTSubtableEntryType.SubDirectory,
+              length: typeAndLength % 0x80,
+            };
+          }
+        }
+      }
+
+      class NitroFNTDirectory {
+        constructor(name) {
+          this.name = name;
+          this.files = [];
+          this.directories = [];
+        }
+      }
+
+      class NitroFNTFile {
+        constructor(name, id) {
+          this.name = name;
+          this.id = id;
+        }
+      }
+
+      class NitroFNT {
+        constructor(raw) {
+          const numEntries = raw.readUint16(0x06);
+          const mainTableBuffer = raw.slice(0, 8 * numEntries);
+          this.mainTable = new NitroFNTMainTable(mainTableBuffer, numEntries);
+
+          this.subTables = [];
+          for (let i = 0; i < this.mainTable.entries.length; i++) {
+            const subTableOffset = this.mainTable.entries[i].subTableOffset;
+            const subTable = new NitroFNTSubTable(raw.slice(subTableOffset));
+            this.subTables.push(subTable);
+          }
+
+          this.tree = new NitroFNTDirectory("root");
+          this.parseSubTable(this.subTables[0], this.tree, 0);
+        }
+
+        parseSubTable(subTable, parentDirectory, parentDirectoryID) {
+          const mainTableEntry = this.mainTable.entries[parentDirectoryID];
+
+          for (let i = 0; i < subTable.entries.length; i++) {
+            const subTableEntry = subTable.entries[i];
+
+            if (subTableEntry.type === NitroFNTSubtableEntryType.File) {
+              const file = new NitroFNTFile(
+                subTableEntry.name,
+                mainTableEntry.firstFileID + i
+              );
+              parentDirectory.files.push(file);
+            } else if (
+              subTableEntry.type === NitroFNTSubtableEntryType.SubDirectory
+            ) {
+              const directory = new NitroFNTDirectory(subTableEntry.name);
+              parentDirectory.directories.push(directory);
+              this.parseSubTable(
+                this.subTables[subTableEntry.subDirectoryID],
+                directory,
+                subTableEntry.subDirectoryID
+              );
+            }
+          }
+        }
+      }
+
+      // Main NitroFS Class
+      class NitroFS {
+        static fromRom(rom) {
+          const nitroFS = new NitroFS();
+          const reader = BufferReader.new(rom, true);
+
+          const headerBuffer = reader.slice(0, 0x200);
+          nitroFS.cartridgeHeader = new CartridgeHeader(headerBuffer);
+
+          const fntBuffer = reader.slice(
+            nitroFS.cartridgeHeader.fntOffset,
+            nitroFS.cartridgeHeader.fntOffset +
+              nitroFS.cartridgeHeader.fntLength
+          );
+          nitroFS.fnt = new NitroFNT(fntBuffer);
+
+          const fatBuffer = reader.slice(
+            nitroFS.cartridgeHeader.fatOffset,
+            nitroFS.cartridgeHeader.fatOffset +
+              nitroFS.cartridgeHeader.fatLength
+          );
+          const fat = new NitroFAT(fatBuffer);
+
+          nitroFS.fileData = [];
+          for (let i = 0; i < fat.entries.length; i++) {
+            const entry = fat.entries[i];
+            nitroFS.fileData[i] = reader
+              .slice(entry.startAddress, entry.endAddress)
+              .getBuffer();
+          }
+
+          return nitroFS;
+        }
+
+        readFile(path) {
+          const directoryParts = path.split("/").filter((part) => part !== "");
+          const fileName = directoryParts.pop();
+
+          let currentDir = this.fnt.tree;
+          for (const dirName of directoryParts) {
+            const foundDir = currentDir.directories.find(
+              (dir) => dir.name === dirName
+            );
+            if (!foundDir) throw new Error(`Directory not found: ${dirName}`);
+            currentDir = foundDir;
+          }
+
+          const file = currentDir.files.find((file) => file.name === fileName);
+          if (!file) throw new Error(`File not found: ${fileName}`);
+
+          return this.fileData[file.id];
+        }
+
+        readDir(path) {
+          const directoryParts = path.split("/").filter((part) => part !== "");
+
+          let currentDir = this.fnt.tree;
+          for (const dirName of directoryParts) {
+            const foundDir = currentDir.directories.find(
+              (dir) => dir.name === dirName
+            );
+            if (!foundDir) throw new Error(`Directory not found: ${dirName}`);
+            currentDir = foundDir;
+          }
+
+          const files = currentDir.files.map((file) => file.name);
+          const directories = currentDir.directories.map((dir) => dir.name);
+
+          return { files, directories };
+        }
+
+        exists(path) {
+          try {
+            this.readFile(path);
+            return true;
+          } catch (e) {
+            return false;
+          }
+        }
+
+        getDirectoryTree() {
+          return this.fnt.tree;
+        }
+      }
+
+      // Global variables
+      let currentNitroFS = null;
+      let currentSelectedFile = null;
+
+      // UI Functions
+      function loadROM() {
+        const fileInput = document.getElementById("romFile");
+        const file = fileInput.files[0];
+
+        if (!file) {
+          alert("Please select a ROM file");
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          try {
+            const arrayBuffer = e.target.result;
+            currentNitroFS = NitroFS.fromRom(arrayBuffer);
+            displayFileBrowser();
+          } catch (error) {
+            console.error("Error loading ROM:", error);
+            alert("Error loading ROM: " + error.message);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      }
+
+      function displayFileBrowser() {
+        const fileBrowser = document.querySelector(".file-browser");
+        const fileTree = document.getElementById("fileTree");
+
+        fileBrowser.style.display = "block";
+        fileTree.innerHTML = "";
+
+        function buildTree(directory, parentElement, path = "") {
+          const ul = document.createElement("ul");
+          ul.className = "file-tree";
+
+          // Add directories
+          directory.directories.forEach((dir) => {
+            const li = document.createElement("li");
+            li.className = "directory";
+            li.textContent = dir.name;
+            li.onclick = () => {
+              const newPath = path ? `${path}/${dir.name}` : dir.name;
+              try {
+                const dirContents = currentNitroFS.readDir(newPath);
+                displayDirectoryContents(dirContents, newPath);
+              } catch (error) {
+                console.error("Error reading directory:", error);
+              }
+            };
+            ul.appendChild(li);
+          });
+
+          // Add files
+          directory.files.forEach((file) => {
+            const li = document.createElement("li");
+            li.className = "file";
+            li.textContent = file.name;
+            li.onclick = () => {
+              const filePath = path ? `${path}/${file.name}` : file.name;
+              displayFile(filePath, file);
+            };
+            ul.appendChild(li);
+          });
+
+          parentElement.appendChild(ul);
+        }
+
+        buildTree(currentNitroFS.getDirectoryTree(), fileTree);
+      }
+
+      function displayDirectoryContents(dirContents, path) {
+        const fileTree = document.getElementById("fileTree");
+        fileTree.innerHTML = `<div><button onclick="displayFileBrowser()">← Back to Root</button></div>`;
+
+        const ul = document.createElement("ul");
+        ul.className = "file-tree";
+
+        // Add directories
+        dirContents.directories.forEach((dir) => {
+          const li = document.createElement("li");
+          li.className = "directory";
+          li.textContent = dir;
+          li.onclick = () => {
+            const newPath = `${path}/${dir}`;
+            try {
+              const newDirContents = currentNitroFS.readDir(newPath);
+              displayDirectoryContents(newDirContents, newPath);
+            } catch (error) {
+              console.error("Error reading directory:", error);
+            }
+          };
+          ul.appendChild(li);
+        });
+
+        // Add files
+        dirContents.files.forEach((file) => {
+          const li = document.createElement("li");
+          li.className = "file";
+          li.textContent = file;
+          li.onclick = () => {
+            const filePath = `${path}/${file}`;
+            displayFile(filePath, { name: file });
+          };
+          ul.appendChild(li);
+        });
+
+        fileTree.appendChild(ul);
+      }
+
+      function displayFile(filePath, fileInfo) {
+        currentSelectedFile = { path: filePath, info: fileInfo };
+
+        const fileViewer = document.querySelector(".file-viewer");
+        const fileInfoDiv = document.getElementById("fileInfo");
+        const fileContent = document.getElementById("fileContent");
+
+        fileViewer.style.display = "block";
+        fileInfoDiv.textContent = `File: ${filePath}`;
+
+        try {
+          const fileData = currentNitroFS.readFile(filePath);
+          const bufferReader = BufferReader.new(fileData);
+
+          // Try to display as text first, fall back to hex
+          let content = "";
+          try {
+            const text = new TextDecoder().decode(fileData);
+            if (text.includes("\0") || text.length === 0) {
+              throw new Error("Binary data");
+            }
+            content = text;
+          } catch (e) {
+            // Display as hex
+            content = Array.from(new Uint8Array(fileData))
+              .map((b) => b.toString(16).padStart(2, "0"))
+              .join(" ");
+          }
+
+          fileContent.textContent = content;
+        } catch (error) {
+          fileContent.textContent = `Error reading file: ${error.message}`;
+        }
+      }
+
+      function downloadFile() {
+        if (!currentSelectedFile) {
+          alert("No file selected");
+          return;
+        }
+
+        try {
+          const fileData = currentNitroFS.readFile(currentSelectedFile.path);
+          const blob = new Blob([fileData]);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = currentSelectedFile.path.split("/").pop();
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          alert("Error downloading file: " + error.message);
+        }
+      }
+
+      // Make functions globally available
+      window.loadROM = loadROM;
+      window.displayFileBrowser = displayFileBrowser;
+      window.downloadFile = downloadFile;
+    </script>
+  </body>
+</html>
