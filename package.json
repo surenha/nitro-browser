@@ -1,0 +1,27 @@
+{
+  "name": "nitro-browser",
+  "version": "1.0.0",
+  "description": "NitroFS Browser and Texture Viewer for Nintendo DS ROMs",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "webpack serve --mode development",
+    "build": "webpack --mode production",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "nds",
+    "nitrofs",
+    "webgl",
+    "browser"
+  ],
+  "author": "surenha",
+  "license": "MIT",
+  "devDependencies": {
+    "html-webpack-plugin": "^5.6.6",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "webpack": "^5.105.2",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.3"
+  }
+}
