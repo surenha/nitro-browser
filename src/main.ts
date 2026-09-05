@@ -10,6 +10,8 @@ import { SDAT } from "./filetypes/sdat.js";
 import { NFTR } from "./filetypes/nftr.js";
 import { KCL } from "./filetypes/kcl.js";
 import { NSBTP } from "./filetypes/nsbtp.js";
+import { NSBCA } from "./filetypes/nsbca.js";
+import { NSBMA } from "./filetypes/nsbma.js";
 
 const input = document.getElementById("romFile") as HTMLInputElement;
 const btn = document.getElementById("uploadBtn")!;
@@ -122,6 +124,14 @@ function formatTreeWithLinks(treeText: string): string {
         const name = line.match(/[^\s]+\.NSBTP/i)?.[0];
         if (name) return line.replace(name, `<span class="file-link nsbtp-link" style="color: #cc9900; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
       }
+      if (line.match(/\.NSBCA/i)) {
+        const name = line.match(/[^\s]+\.NSBCA/i)?.[0];
+        if (name) return line.replace(name, `<span class="file-link nsbca-link" style="color: #9933cc; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
+      }
+      if (line.match(/\.NSBMA/i)) {
+        const name = line.match(/[^\s]+\.NSBMA/i)?.[0];
+        if (name) return line.replace(name, `<span class="file-link nsbma-link" style="color: #339966; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
+      }
       return line;
     })
     .join("\n");
@@ -158,6 +168,10 @@ function handleFileClick(e: Event) {
     openKCLFile(name);
   } else if (target.classList.contains("nsbtp-link")) {
     openNSBTPFile(name);
+  } else if (target.classList.contains("nsbca-link")) {
+    openNSBCAFile(name);
+  } else if (target.classList.contains("nsbma-link")) {
+    openNSBMAFile(name);
   }
 }
 
@@ -326,6 +340,56 @@ function openNSBTPFile(fileName: string) {
     panel.appendChild(info);
   } catch (err) {
     alert(`Error decoding NSBTP file: ${err}`);
+  }
+}
+
+function openNSBCAFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  try {
+    const nsbca = new NSBCA(fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer);
+
+    const panel = document.getElementById("rightPanel")!;
+    panel.innerHTML = "";
+
+    const header = document.createElement("h3");
+    header.textContent = fileName;
+    header.style.cssText = "margin: 0 0 10px 0; font-size: 16px;";
+
+    const info = document.createElement("pre");
+    info.style.cssText = "padding: 15px; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap;";
+    info.textContent = nsbca.getInfo();
+
+    panel.appendChild(header);
+    panel.appendChild(info);
+  } catch (err) {
+    alert(`Error decoding NSBCA file: ${err}`);
+  }
+}
+
+function openNSBMAFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  try {
+    const nsbma = new NSBMA(fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer);
+
+    const panel = document.getElementById("rightPanel")!;
+    panel.innerHTML = "";
+
+    const header = document.createElement("h3");
+    header.textContent = fileName;
+    header.style.cssText = "margin: 0 0 10px 0; font-size: 16px;";
+
+    const info = document.createElement("pre");
+    info.style.cssText = "padding: 15px; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap;";
+    info.textContent = nsbma.getInfo();
+
+    panel.appendChild(header);
+    panel.appendChild(info);
+  } catch (err) {
+    alert(`Error decoding NSBMA file: ${err}`);
   }
 }
 
