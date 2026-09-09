@@ -50,43 +50,46 @@ export class NCLR {
   }
 
   private parsePLTT(offset: number): void {
-    // TTLP Chunk Header starts at offset
-    // 0x00: Magic 'TTLP' (4 bytes)
-    // 0x04: Chunk Size (4 bytes)
+    const blockSize = this.view.getUint32(offset + 4, true);
+    const blockEnd = offset + blockSize;
 
-    // According to NCLR spec, fields relative to TTLP start (+8):
     const dataOffset = offset + 8;
 
-    const colorFormat = this.view.getUint32(dataOffset, true); // 3 = 4bpp, 4 = 8bpp
+    const colorFormat = this.view.getUint32(dataOffset, true);
     const extended = this.view.getUint32(dataOffset + 4, true);
 
-    // Read the actual size of the palette data payload
-    const paletteSize = this.view.getUint32(dataOffset + 8, true);
+    const declaredPaletteSize = this.view.getUint32(dataOffset + 8, true);
 
-    // CRITICAL FIX: Read the relative offset to the palette data from the file structure
-    // Instead of hardcoding 0x18, use the structural pointer located at dataOffset + 12
     const relativeDataOffset = this.view.getUint32(dataOffset + 12, true);
     const paletteDataOffset = dataOffset + relativeDataOffset;
 
-    // BOUNDS CHECK: Verify that the color array fits inside the ArrayBuffer
-    if (paletteDataOffset + paletteSize > this.view.byteLength) {
-      throw new RangeError(`Malformed NCLR: Palette block (offset: ${paletteDataOffset}, size: ${paletteSize}) overflows total buffer size (${this.view.byteLength} bytes).`);
+    const availableInBlock = blockEnd - paletteDataOffset;
+    const availableInBuffer = this.view.byteLength - paletteDataOffset;
+    const paletteSize = Math.min(declaredPaletteSize, availableInBlock, availableInBuffer);
+
+    if (paletteSize <= 0) {
+      throw new RangeError(`Malformed NCLR: Palette block (offset: ${paletteDataOffset}) has no room for color data inside a ${this.view.byteLength}-byte buffer.`);
     }
 
     const format = colorFormat === 3 ? "palette16" : "palette256";
     const numColors = paletteSize / 2;
+
+    // cap palette size to 16 if not extended
+    // const format = colorFormat === 3 ? "palette16" : "palette256";
+    // let numColors = paletteSize / 2;
+    // if (format === "palette16" && extended !== 1) {
+    //   numColors = Math.min(numColors, 16);
+    // }
     const colors: NCLRColor[] = [];
 
     for (let i = 0; i < numColors; i++) {
       const currentByteIndex = paletteDataOffset + i * 2;
       const color16 = this.view.getUint16(currentByteIndex, true);
 
-      // Extract 5-bit color channels
       const r5 = (color16 >> 0) & 0x1f;
       const g5 = (color16 >> 5) & 0x1f;
       const b5 = (color16 >> 10) & 0x1f;
 
-      // Accurate hardware-accurate BGR555 scaling (replicates upper bits to lowest bits)
       const r = r5 * 8;
       const g = g5 * 8;
       const b = b5 * 8;
@@ -98,7 +101,6 @@ export class NCLR {
 
     this.palette = { colors, format, extended: extended === 1 };
   }
-
   public getPalette(): NCLRPalette | null {
     return this.palette;
   }
@@ -110,20 +112,35 @@ export class NCLR {
     return `Format: ${format}\nExtended: ${extended}\nColors: ${colors.length}`;
   }
 
-  public renderHTML(): string {
+  // public renderHTML(): string {
+  //   if (!this.palette) return "<p>No palette data</p>";
+
+  //   const isPalette16 = this.palette.format === "palette16";
+  //   const colorsPerRow = isPalette16 ? 16 : 32;
+
+  //   // Generates an 8px vertical row gap for 16-color bank visualization
+  //   const rowGap = isPalette16 ? "8px" : "2px";
+  //   let html = `<div style="display: grid; grid-template-columns: repeat(${colorsPerRow}, 20px); gap: ${rowGap} 2px;">`;
+
+  //   for (const color of this.palette.colors) {
+  //     html += `<div style="width: 20px; height: 20px; background: ${color.hex};" title="${color.hex}"></div>`;
+  //   }
+
+  //   html += "</div>";
+  //   return html;
+  // }
+
+  public renderHTML(bankIndex = 0): string {
     if (!this.palette) return "<p>No palette data</p>";
 
     const isPalette16 = this.palette.format === "palette16";
     const colorsPerRow = isPalette16 ? 16 : 32;
+    const colors = isPalette16 ? this.palette.colors.slice(bankIndex * 16, bankIndex * 16 + 16) : this.palette.colors;
 
-    // Generates an 8px vertical row gap for 16-color bank visualization
-    const rowGap = isPalette16 ? "8px" : "2px";
-    let html = `<div style="display: grid; grid-template-columns: repeat(${colorsPerRow}, 20px); gap: ${rowGap} 2px;">`;
-
-    for (const color of this.palette.colors) {
+    let html = `<div style="display: grid; grid-template-columns: repeat(${colorsPerRow}, 20px); gap: 2px;">`;
+    for (const color of colors) {
       html += `<div style="width: 20px; height: 20px; background: ${color.hex};" title="${color.hex}"></div>`;
     }
-
     html += "</div>";
     return html;
   }

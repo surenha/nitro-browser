@@ -12,6 +12,13 @@ import { KCL } from "./filetypes/kcl.js";
 import { NSBTP } from "./filetypes/nsbtp.js";
 import { NSBCA } from "./filetypes/nsbca.js";
 import { NSBMA } from "./filetypes/nsbma.js";
+import { SPA } from "./filetypes/spa.js";
+import { PRM } from "./filetypes/prm.js";
+import { GRPCONF, EMBLEM } from "./filetypes/tbl.js";
+import { NKMT } from "./filetypes/mtbl.js";
+import { NKKT } from "./filetypes/ktbl.js";
+import { BMG } from "./filetypes/bmg.js";
+import { openModelViewer, buildMeshesForModel } from "./utils/webgl-viewer.js";
 
 const input = document.getElementById("romFile") as HTMLInputElement;
 const btn = document.getElementById("uploadBtn")!;
@@ -132,6 +139,30 @@ function formatTreeWithLinks(treeText: string): string {
         const name = line.match(/[^\s]+\.NSBMA/i)?.[0];
         if (name) return line.replace(name, `<span class="file-link nsbma-link" style="color: #339966; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
       }
+      if (line.match(/\.SPA/i)) {
+        const name = line.match(/[^\s]+\.SPA/i)?.[0];
+        if (name) return line.replace(name, `<span class="file-link spa-link" style="color: #339966; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
+      }
+      if (line.match(/\.PRM/i)) {
+        const name = line.match(/[^\s]+\.PRM/i)?.[0];
+        if (name) return line.replace(name, `<span class="file-link prm-link" style="color: #339966; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
+      }
+      if (line.match(/\.TBL/i)) {
+        const name = line.match(/[^\s]+\.TBL/i)?.[0];
+        if (name) return line.replace(name, `<span class="file-link tbl-link" style="color: #339966; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
+      }
+      if (line.match(/\.MTBL/i)) {
+        const name = line.match(/[^\s]+\.MTBL/i)?.[0];
+        if (name) return line.replace(name, `<span class="file-link mtbl-link" style="color: #339966; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
+      }
+      if (line.match(/\.KTBL/i)) {
+        const name = line.match(/[^\s]+\.KTBL/i)?.[0];
+        if (name) return line.replace(name, `<span class="file-link ktbl-link" style="color: #339966; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
+      }
+      if (line.match(/\.BMG/i)) {
+        const name = line.match(/[^\s]+\.BMG/i)?.[0];
+        if (name) return line.replace(name, `<span class="file-link bmg-link" style="color: #339966; text-decoration: underline; cursor: pointer;" data-file="${name}">${name}</span>`);
+      }
       return line;
     })
     .join("\n");
@@ -172,6 +203,18 @@ function handleFileClick(e: Event) {
     openNSBCAFile(name);
   } else if (target.classList.contains("nsbma-link")) {
     openNSBMAFile(name);
+  } else if (target.classList.contains("spa-link")) {
+    openSPAFile(name);
+  } else if (target.classList.contains("prm-link")) {
+    openPRMFile(name);
+  } else if (target.classList.contains("tbl-link")) {
+    openTblFile(name);
+  } else if (target.classList.contains("mtbl-link")) {
+    openNKMTFile(name);
+  } else if (target.classList.contains("ktbl-link")) {
+    openNKKTFile(name);
+  } else if (target.classList.contains("bmg-link")) {
+    openBMGFile(name);
   }
 }
 
@@ -393,6 +436,142 @@ function openNSBMAFile(fileName: string) {
   }
 }
 
+function openSPAFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  try {
+    const spa = new SPA(fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer);
+
+    const panel = document.getElementById("rightPanel")!;
+    panel.innerHTML = "";
+
+    const header = document.createElement("h3");
+    header.textContent = fileName;
+    header.style.cssText = "margin: 0 0 10px 0; font-size: 16px;";
+
+    const info = document.createElement("pre");
+    info.style.cssText = "padding: 15px; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap;";
+    info.textContent = spa.getInfo();
+
+    panel.appendChild(header);
+    panel.appendChild(info);
+  } catch (err) {
+    alert(`Error decoding SPA file: ${err}`);
+  }
+}
+
+function openPRMFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  try {
+    const prm = new PRM(fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer);
+
+    const panel = document.getElementById("rightPanel")!;
+    panel.innerHTML = "";
+
+    const header = document.createElement("h3");
+    header.textContent = fileName;
+    header.style.cssText = "margin: 0 0 10px 0; font-size: 16px;";
+
+    const info = document.createElement("pre");
+    info.style.cssText = "padding: 15px; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap; font-family: monospace; font-size: 12px;";
+    info.textContent = prm.getInfo();
+
+    panel.appendChild(header);
+    panel.appendChild(info);
+  } catch (err) {
+    alert(`Error decoding PRM file: ${err}`);
+  }
+}
+
+function openGRPCONFFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  try {
+    const grpconf = new GRPCONF(fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer);
+    renderTextPanel(fileName, grpconf.getInfo());
+  } catch (err) {
+    alert(`Error decoding .tbl file: ${err}`);
+  }
+}
+
+function openNKMTFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  try {
+    const mtbl = new NKMT(fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer);
+    renderTextPanel(fileName, mtbl.getInfo());
+  } catch (err) {
+    alert(`Error decoding NKMT file: ${err}`);
+  }
+}
+
+function openNKKTFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  try {
+    const ktbl = new NKKT(fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer);
+    renderTextPanel(fileName, ktbl.getInfo());
+  } catch (err) {
+    alert(`Error decoding NKKT file: ${err}`);
+  }
+}
+
+function openBMGFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  try {
+    const bmg = new BMG(fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer);
+    renderTextPanel(fileName, bmg.getInfo());
+  } catch (err) {
+    alert(`Error decoding BMG file: ${err}`);
+  }
+}
+
+function renderTextPanel(fileName: string, text: string) {
+  const panel = document.getElementById("rightPanel")!;
+  panel.innerHTML = "";
+
+  const header = document.createElement("h3");
+  header.textContent = fileName;
+  header.style.cssText = "margin: 0 0 10px 0; font-size: 16px;";
+
+  const info = document.createElement("pre");
+  info.style.cssText = "padding: 15px; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap; font-family: monospace; font-size: 12px;";
+  info.textContent = text;
+
+  panel.appendChild(header);
+  panel.appendChild(info);
+}
+
+function openTblFile(fileName: string) {
+  const fileData = getFileData(fileName);
+  if (!fileData) return;
+
+  const buffer = fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer;
+
+  try {
+    const grpconf = new GRPCONF(buffer);
+    renderTextPanel(fileName, grpconf.getInfo());
+    return;
+  } catch {
+    // not a GRPCONF-style layout, fall through
+  }
+
+  try {
+    const emblem = new EMBLEM(buffer);
+    renderTextPanel(fileName, emblem.getInfo());
+  } catch (err) {
+    alert(`Error decoding .tbl file: ${err}`);
+  }
+}
+
 function openNFTRFile(fileName: string) {
   const fileData = getFileData(fileName);
   if (!fileData) return;
@@ -568,7 +747,7 @@ function findCompanionFile(baseName: string, extensions: string[]): { data: Uint
 
         const parts = cleanTargetBase.split("_");
 
-        for (let len = parts.length - 1; len >= 1; len--) {
+        for (let len = parts.length; len >= 1; len--) {
           const activePrefix = parts.slice(0, len).join("_").toLowerCase();
 
           for (const entry of archiveFiles) {
@@ -579,6 +758,24 @@ function findCompanionFile(baseName: string, extensions: string[]): { data: Uint
             const lowerCandidateBase = currentFileBase.toLowerCase();
 
             if (lowerCandidateBase.startsWith(activePrefix)) {
+              for (const ext of extensions) {
+                if (entry.toLowerCase().endsWith(ext.toLowerCase())) {
+                  const data = arc.extractFile(entry);
+                  if (data) return { data, foundName: entry };
+                }
+              }
+            }
+          }
+        }
+
+        const noTrailingDigits = cleanTargetBase.replace(/\d+$/, "");
+        if (noTrailingDigits !== cleanTargetBase) {
+          for (const entry of archiveFiles) {
+            let currentFileBase = entry;
+            if (currentFileBase.includes(".")) {
+              currentFileBase = currentFileBase.substring(0, currentFileBase.lastIndexOf("."));
+            }
+            if (currentFileBase.toLowerCase() === noTrailingDigits.toLowerCase()) {
               for (const ext of extensions) {
                 if (entry.toLowerCase().endsWith(ext.toLowerCase())) {
                   const data = arc.extractFile(entry);
@@ -626,7 +823,7 @@ function findCompanionFile(baseName: string, extensions: string[]): { data: Uint
 
   const parts = cleanTargetBase.split("_");
 
-  for (let len = parts.length - 1; len >= 1; len--) {
+  for (let len = parts.length; len >= 1; len--) {
     const activePrefix = parts.slice(0, len).join("_").toLowerCase();
 
     for (const entry of allFiles) {
@@ -644,6 +841,24 @@ function findCompanionFile(baseName: string, extensions: string[]): { data: Uint
             if (data) {
               return { data, foundName: entry };
             }
+          }
+        }
+      }
+    }
+  }
+
+  const noTrailingDigits = cleanTargetBase.replace(/\d+$/, "");
+  if (noTrailingDigits !== cleanTargetBase) {
+    for (const entry of allFiles) {
+      let currentFileBase = entry;
+      if (currentFileBase.includes(".")) {
+        currentFileBase = currentFileBase.substring(0, currentFileBase.lastIndexOf("."));
+      }
+      if (currentFileBase.toLowerCase() === noTrailingDigits.toLowerCase()) {
+        for (const ext of extensions) {
+          if (entry.toLowerCase().endsWith(ext.toLowerCase())) {
+            const data = currentDirectory.extractFile(entry);
+            if (data) return { data, foundName: entry };
           }
         }
       }
@@ -1039,6 +1254,18 @@ function openNSBMDFile(fileName: string) {
           `├─ Vertices: ${model.verticesCount} | Polygons: ${model.polygonsCount}\n` +
           `└─ Active SBC Script opcodes:\n${sbcSummary}`;
         mdlSection.appendChild(text);
+
+        const viewBtn = document.createElement("button");
+        viewBtn.textContent = "View 3D";
+        viewBtn.style.cssText = "margin-top: 4px; padding: 4px 12px; border-radius: 4px; border: 1px solid #00994d; background: #e6f7ee; color: #00994d; cursor: pointer;";
+        viewBtn.onclick = () => {
+          const modelBuffer = fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength) as ArrayBuffer;
+          const modelBytes = new Uint8Array(modelBuffer);
+          const modelView = new DataView(modelBuffer);
+          const meshesByShapeName = buildMeshesForModel(model, modelBytes, modelView);
+          openModelViewer({ model, meshesByShapeName, textures: bmd.textures, palettes: bmd.palettes });
+        };
+        mdlSection.appendChild(viewBtn);
       });
       viewport.appendChild(mdlSection);
     }
